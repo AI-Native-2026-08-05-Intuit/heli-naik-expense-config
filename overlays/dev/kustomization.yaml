@@ -1,0 +1,64 @@
+# uptimecrew/expense-config/overlays/dev/kustomization.yaml
+# The dev overlay -- the smallest viable patch over the W5 D3 base.
+# Same shape repeats at overlays/staging/ and overlays/prod/ with
+# different namespace + replica + image-tag patches.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind:       Kustomization
+
+# Base: the unchanged W5 D3 manifests, copied verbatim into the
+# config repo at base/. Kept identical across envs.
+resources:
+  - ../../base
+
+# Per-env namespace -- Kustomize rewrites every resource's
+# metadata.namespace at build time.
+namespace: expense-dev
+
+# Sync-wave annotations: Namespace lands in wave -1 (before
+# anything else); Deployment in wave 0 (default).
+commonAnnotations:
+  argocd.argoproj.io/sync-wave: "0"
+
+# Image-tag rewrite -- the CI bump-config workflow rewrites the
+# digest portion only; Kustomize merges it onto the rendered
+# Deployment without touching the base manifest.
+# Replace newTag with yesterday's CI SHA before the first sync.
+images:
+  - name:    uptimecrew/expense-api
+    newName: uptimecrew/expense-api
+    newTag:  e87d308a6d587c3da973e61af85efd37d500c7b7
+
+# Per-env replica count -- dev runs hot at one replica.
+replicas:
+  - name:  expense-api
+    count: 1
+
+# Per-env config patch -- override the W5 D3 ConfigMap entries
+# that should differ between envs (Spring profile, log level,
+# feature flags).
+# W5 D3 ConfigMap uses LOGGING_LEVEL_ROOT (not LOG_LEVEL).
+patches:
+  - target:
+      kind: ConfigMap
+      name: expense-api-config
+    patch: |-
+      - op: replace
+        path: /data/SPRING_PROFILES_ACTIVE
+        value: k8s
+      - op: replace
+        path: /data/LOGGING_LEVEL_ROOT
+        value: DEBUG
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: expense-api
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+  - target:
+      kind: Namespace
+      name: expense-dev
+    patch: |-
+      - op: replace
+        path: /metadata/annotations/argocd.argoproj.io~1sync-wave
+        value: "-1"

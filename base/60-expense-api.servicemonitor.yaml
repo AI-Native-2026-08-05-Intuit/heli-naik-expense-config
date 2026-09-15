@@ -1,0 +1,29 @@
+# ServiceMonitor for kube-prometheus-stack. The Operator only picks up
+# monitors with release: kube-prometheus-stack (chart default selector).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: expense-api
+  namespace: expense-dev
+  labels:
+    release: kube-prometheus-stack
+    app.kubernetes.io/name: expense-api
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: expense-api
+  namespaceSelector:
+    matchNames: [expense-dev]
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s
+      scrapeTimeout: 10s
+      metricRelabelings:
+        # Drop http_server_requests series where exception is a real Java class name.
+        # RE2 note: ".+" matches the literal "none" too, which silently drops all
+        # HTTP metrics.  Instead match only uppercase-starting identifiers (Java class
+        # names) so series with exception="none" are kept.
+        - sourceLabels: [exception]
+          regex: "[A-Z][a-zA-Z0-9$.]+"
+          action: drop

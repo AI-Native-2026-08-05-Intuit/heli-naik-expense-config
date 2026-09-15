@@ -1,0 +1,18 @@
+# manifests/30-expense-api.configmap.yaml - non-secret env.
+# For the lab cluster (k8s-ci / k8s-up.sh) only expense-api is deployed.
+# SPRING_PROFILES_ACTIVE=k8s switches the app to in-memory H2 (see
+# application.yml); do not point datasource/redis/kafka env at Services
+# that are not in the manifest set.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: expense-api-config
+  namespace: expense-dev
+  labels:
+    app.kubernetes.io/name: expense-api
+data:
+  SPRING_PROFILES_ACTIVE: k8s
+  LOGGING_LEVEL_ROOT:     INFO
+  SERVER_PORT:            "8080"
+  OTEL_SERVICE_NAME:      expense-api
