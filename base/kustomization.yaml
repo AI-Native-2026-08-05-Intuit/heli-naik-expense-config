@@ -12,4 +12,6 @@ resources:
   - 40-expense-api.secret.yaml
   - 50-expense-api.hpa.yaml
   - 60-expense-api.ingress.yaml
-  - 60-expense-api.servicemonitor.yaml
+  # ServiceMonitor requires Prometheus Operator CRDs.
+  # Re-add here (or in a staging/prod overlay) once the cluster has Prometheus Operator installed.
+  # - 60-expense-api.servicemonitor.yaml
