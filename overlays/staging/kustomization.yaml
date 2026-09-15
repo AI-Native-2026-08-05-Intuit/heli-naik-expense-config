@@ -1,0 +1,50 @@
+# overlays/staging/kustomization.yaml
+# Same shape as overlays/dev with staging namespace, replica, and log level.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind:       Kustomization
+
+resources:
+  - ../../base
+
+namespace: expense-staging
+
+commonAnnotations:
+  argocd.argoproj.io/sync-wave: "0"
+
+images:
+  - name:    uptimecrew/expense-api
+    newName: uptimecrew/expense-api
+    newTag:  e87d308a6d587c3da973e61af85efd37d500c7b7
+
+replicas:
+  - name:  expense-api
+    count: 2
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: expense-api-config
+    patch: |-
+      - op: replace
+        path: /data/SPRING_PROFILES_ACTIVE
+        value: k8s
+      - op: replace
+        path: /data/LOGGING_LEVEL_ROOT
+        value: INFO
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: expense-api
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 2
+  - target:
+      kind: Namespace
+      name: expense-dev
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: expense-staging
+      - op: replace
+        path: /metadata/annotations/argocd.argoproj.io~1sync-wave
+        value: "-1"
