@@ -38,13 +38,3 @@ patches:
       - op: replace
         path: /spec/minReplicas
         value: 2
-  - target:
-      kind: Namespace
-      name: expense-dev
-    patch: |-
-      - op: replace
-        path: /metadata/name
-        value: expense-staging
-      - op: replace
-        path: /metadata/annotations/argocd.argoproj.io~1sync-wave
-        value: "-1"
