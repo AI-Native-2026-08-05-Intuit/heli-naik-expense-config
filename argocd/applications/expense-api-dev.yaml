@@ -1,0 +1,62 @@
+# argocd/applications/expense-api-dev.yaml
+# Single-env Application for the dev overlay. The ApplicationSet
+# (Task 3) generates the matching staging + prod Applications via
+# a matrix generator. This file stays as the dev anchor so a
+# brand-new contributor has one concrete Application to read.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: expense-api-dev
+  namespace: argocd
+  # Without this finalizer, deleting the Application leaves the
+  # Deployment + Service + ConfigMap orphaned in the cluster.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    env:  dev
+    team: expense
+  annotations:
+    notifications.argoproj.io/subscribe.on-sync-failed.slack: expense-deploys
+    notifications.argoproj.io/subscribe.on-health-degraded.slack: expense-deploys
+    # Webhook subscriptions key on the service NAME (expense-slack) with an
+    # empty value; there is no channel to name.
+    notifications.argoproj.io/subscribe.on-sync-failed.expense-slack: ""
+    notifications.argoproj.io/subscribe.on-health-degraded.expense-slack: ""
+spec:
+  # MUST be the project name -- never "default".
+  project: expense
+
+  source:
+    repoURL:        https://github.com/AI-Native-2026-08-05-Intuit/heli-naik-expense-config.git
+    path:           overlays/dev
+    targetRevision: main
+    kustomize:
+      # The CI bump-config workflow rewrites this image reference
+      # on every green main build; Kustomize patches the rendered
+      # Deployment to match.
+      images:
+        - uptimecrew/expense-api:e87d308a6d587c3da973e61af85efd37d500c7b7
+
+  destination:
+    server:    https://kubernetes.default.svc
+    namespace: expense-dev
+
+  syncPolicy:
+    automated:
+      prune:      true   # remove resources deleted from Git
+      selfHeal:   true   # revert drift from kubectl edit on live cluster
+      allowEmpty: false  # never sync an empty manifest set (deletes everything)
+    syncOptions:
+      - CreateNamespace=true     # first sync creates expense-dev if missing
+      # ServerSideApply is omitted: Argo CD v2.11.7's OpenAPI schema lacks
+      # Deployment.status.terminatingReplicas (newer k3d kube), which breaks
+      # structured-merge comparison (sync=Unknown / ComparisonError).
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true           # workloads pruned AFTER their dependencies
+      - ApplyOutOfSyncOnly=true  # skip already-converged resources
+    retry:
+      limit: 5
+      backoff:
+        duration:    10s
+        factor:      2
+        maxDuration: 3m

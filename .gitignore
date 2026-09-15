@@ -1,0 +1,8 @@
+# Editor and OS cruft. This repo is Argo CD's source of truth -- a review
+# diff here should only ever be manifests.
+.idea/
+.vscode/
+.DS_Store
+
+# Local render output from `kustomize build overlays/<env> > rendered.yaml`.
+rendered.yaml
