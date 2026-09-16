@@ -1,0 +1,122 @@
+# argocd-system/notifications-cm.yaml
+# Wires argocd-notifications-controller to Slack.
+#
+# Incoming webhook (hooks.slack.com) is NOT a Slack bot token. Store it as
+# slack-webhook-url on argocd-notifications-secret and use service.webhook.
+# Optional bot token (xoxb-...) can still be slack-token for service.slack.
+# Create out-of-band with scripts/slack-webhook-secret.sh in the application
+# repo (heli-naik-expense-tracking) -- the script needs kubectl, not Argo CD.
+# Engineers do NOT commit the secret to Git.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-notifications-cm
+  namespace: argocd
+data:
+  # ----- Where to deliver notifications -----
+  service.slack: |
+    token: $slack-token   # optional Bot token from argocd-notifications-secret
+
+  service.webhook.expense-slack: |
+    url: $slack-webhook-url
+    headers:
+      - name: Content-Type
+        value: application/json
+    # k3d/podman nodes fail TLS to the public internet
+    # (x509: certificate signed by unknown authority) — same error as
+    # docker.io pulls. Lab-only; drop this when the node trust store
+    # has a real CA.
+    insecureSkipVerify: true
+
+  # ----- Triggers (when to fire) -----
+  trigger.on-sync-failed: |
+    - description: Application sync failed.
+      send:    [app-sync-failed]
+      when:    app.status.operationState.phase in ['Error', 'Failed']
+
+  trigger.on-health-degraded: |
+    - description: Application health degraded.
+      send:    [app-health-degraded]
+      when:    app.status.health.status == 'Degraded'
+
+  # NOTE: on-sync-succeeded is DELIBERATELY omitted. Subscribing
+  # every Application to it produces a deploy-firehose that humans
+  # learn to mute -- and once they mute it, they miss the failures
+  # too. The curriculum rule is: alert on bad outcomes; rely on
+  # Git history + the Argo CD UI for "what deployed when."
+
+  # ----- Templates (how to render) -----
+  template.app-sync-failed: |
+    message: |
+      {{.app.metadata.name}} sync FAILED at {{.app.status.operationState.finishedAt}}.
+      Project:   {{.app.spec.project}}
+      Revision:  {{.app.status.operationState.syncResult.revision}}
+      Phase:     {{.app.status.operationState.phase}}
+      Message:   {{.app.status.operationState.message}}
+      View:      https://argocd.uptimecrew.example.internal/applications/{{.app.metadata.name}}
+    slack:
+      attachments: |
+        [{
+          "title":   "{{.app.metadata.name}} sync failed",
+          "color":   "#E96D76",
+          "fields":  [
+            {"title": "Project",  "value": "{{.app.spec.project}}",  "short": true},
+            {"title": "Revision", "value": "{{.app.status.operationState.syncResult.revision}}", "short": true}
+          ]
+        }]
+    # toJson escapes the whole string so the body stays valid JSON.
+    webhook:
+      expense-slack:
+        method: POST
+        body: |
+          {{- $detail := "" -}}
+          {{- with .app.status.operationState.syncResult -}}
+            {{- range .resources -}}
+              {{- if eq .status "SyncFailed" -}}
+                {{- $detail = printf "%s\n- %s %s/%s: %s" $detail .kind .namespace .name .message -}}
+              {{- end -}}
+            {{- end -}}
+          {{- end -}}
+          {"text": {{ printf ":x: %s sync FAILED (%s)\nProject: %s\nMessage: %s%s" .app.metadata.name .app.status.operationState.phase .app.spec.project .app.status.operationState.message $detail | toJson }}}
+
+  template.app-health-degraded: |
+    message: |
+      {{.app.metadata.name}} health is DEGRADED.
+      Project:   {{.app.spec.project}}
+      Status:    {{.app.status.health.status}}
+      Message:   {{.app.status.health.message}}
+      View:      https://argocd.uptimecrew.example.internal/applications/{{.app.metadata.name}}
+    slack:
+      attachments: |
+        [{
+          "title":   "{{.app.metadata.name}} health degraded",
+          "color":   "#F2C744",
+          "fields":  [
+            {"title": "Status",   "value": "{{.app.status.health.status}}",  "short": true},
+            {"title": "Message",  "value": "{{.app.status.health.message}}", "short": false}
+          ]
+        }]
+    webhook:
+      expense-slack:
+        method: POST
+        body: |
+          {"text": {{ printf ":warning: %s health is DEGRADED\nProject: %s\nStatus: %s\nMessage: %s" .app.metadata.name .app.spec.project .app.status.health.status .app.status.health.message | toJson }}}
+
+  # ----- Default subscriptions (per-Application annotations override) -----
+  # Every Application labelled team=expense is subscribed to the two
+  # failure/degraded triggers. This is the fallback for Applications
+  # that forget per-resource annotations.
+  # A webhook recipient is the bare service name (expense-slack), NOT
+  # webhook:expense-slack -- webhook services have no channel/recipient part.
+  #
+  # Recipients are quoted block entries, not a flow sequence: in flow style
+  # [slack:expense-deploys] parses as a mapping, not a string, and the whole
+  # subscriptions block is rejected.
+  subscriptions: |
+    - recipients:
+        - "slack:expense-deploys"
+        - "expense-slack"
+      triggers:
+        - on-sync-failed
+        - on-health-degraded
+      selector: "team=expense"

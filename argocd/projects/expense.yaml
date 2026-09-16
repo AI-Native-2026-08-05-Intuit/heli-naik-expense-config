@@ -1,0 +1,98 @@
+# argocd/projects/expense.yaml
+# AppProject scoping the expense capstone team.
+# The platform team owns this file in practice; the app team
+# proposes changes via PR. Every Application in this assignment
+# has spec.project = expense -- never "default".
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: expense
+  namespace: argocd
+  labels:
+    team: expense
+  # Finalizer ensures Argo CD prunes generated Applications when
+  # the project itself is deleted -- a defence against orphaned
+  # workloads if the project is ever retired.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: expense-api capstone -- GitOps overlays + observability
+
+  # WHICH repos may an Application in this project use as source?
+  # Exact URLs only -- never '*'. The first entry is this GitOps repo -- the
+  # one Argo CD clones and the one CI opens bump PRs against. The second is
+  # the curriculum URL, kept so the reference Applications stay syncable.
+  sourceRepos:
+    - https://github.com/AI-Native-2026-08-05-Intuit/heli-naik-expense-config.git
+    - https://github.com/uptimecrew/expense-config.git
+
+  # WHICH (cluster, namespace) pairs are legal?
+  # The k3d cluster is reachable via the in-cluster service DNS.
+  # Each env has its own namespace -- explicit, not globbed.
+  destinations:
+    - server:    https://kubernetes.default.svc
+      namespace: expense-dev
+    - server:    https://kubernetes.default.svc
+      namespace: expense-staging
+    - server:    https://kubernetes.default.svc
+      namespace: expense-prod
+
+  # Cluster-scoped resources: the app team has NO business creating
+  # ClusterRoles, CustomResourceDefinitions, or PersistentVolumes.
+  # Empty whitelist = full deny. Platform team manages those.
+  clusterResourceWhitelist: []
+
+  # Namespace-scoped resources: kinds the W5 D3 manifests use.
+  # Ingress is in the W5 D3 set (60-expense-api.ingress.yaml) even though
+  # the appendix snippet omitted it -- without it, selfHeal cannot apply Ingress.
+  namespaceResourceWhitelist:
+    - {group: "",                       kind: Namespace}
+    - {group: "",                       kind: Service}
+    - {group: "",                       kind: ConfigMap}
+    - {group: "",                       kind: Secret}
+    - {group: "",                       kind: ServiceAccount}
+    - {group: apps,                     kind: Deployment}
+    - {group: autoscaling,              kind: HorizontalPodAutoscaler}
+    - {group: policy,                   kind: PodDisruptionBudget}
+    - {group: networking.k8s.io,        kind: NetworkPolicy}
+    - {group: networking.k8s.io,        kind: Ingress}
+    - {group: monitoring.coreos.com,    kind: ServiceMonitor}
+    - {group: monitoring.coreos.com,    kind: PrometheusRule}
+
+  # Explicitly block quota knobs -- the platform team owns those.
+  namespaceResourceBlacklist:
+    - {group: "", kind: ResourceQuota}
+    - {group: "", kind: LimitRange}
+
+  # Sync windows: deny auto-sync to prod over the weekend.
+  # Manual sync still works (manualSync: true), but the controller
+  # will not promote on its own.
+  syncWindows:
+    - kind: deny
+      schedule: "0 17 * * 5"        # Friday 17:00 UTC
+      duration: 60h                 # through Monday 05:00 UTC
+      applications:
+        - "expense-api-prod"
+      manualSync: true              # human can still force-sync on-call
+
+  # Project-scoped RBAC -- two roles, not "any-developer-is-admin".
+  roles:
+    - name: developers
+      description: Read everything; sync dev and staging only.
+      policies:
+        - p, proj:expense:developers, applications, get,    expense/*,                 allow
+        - p, proj:expense:developers, applications, sync,   expense/expense-api-dev,   allow
+        - p, proj:expense:developers, applications, sync,   expense/expense-api-staging, allow
+        - p, proj:expense:developers, applications, delete, expense/*,                 deny
+        - p, proj:expense:developers, logs,         get,    expense/*,                 allow
+      groups:
+        - uptimecrew:expense-engineers
+    - name: releasers
+      description: Full sync including prod. Cannot delete Applications.
+      policies:
+        - p, proj:expense:releasers, applications, get,    expense/*, allow
+        - p, proj:expense:releasers, applications, sync,   expense/*, allow
+        - p, proj:expense:releasers, applications, action/*, expense/*, allow
+        - p, proj:expense:releasers, applications, delete, expense/*, deny
+      groups:
+        - uptimecrew:expense-engineers-releasers

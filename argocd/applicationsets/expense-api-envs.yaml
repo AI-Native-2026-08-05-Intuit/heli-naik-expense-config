@@ -1,0 +1,98 @@
+# argocd/applicationsets/expense-api-envs.yaml
+# Templates one Application per env. The list generator drives
+# (env, overlay, namespace) tuples; the inner clusters generator
+# scopes the fleet to the registered local k3d cluster. Adding a
+# new env (e.g. canary) is a one-line entry in the elements list.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: expense-api-envs
+  namespace: argocd
+spec:
+  # If an env falls out of the matrix, KEEP the existing
+  # Application + workload running. A human re-reviews before any
+  # teardown. The default (delete) is the wrong default for prod.
+  # preserveResourcesOnDeletion: if an Application is deleted, do not prune
+  # its destination resources. applicationsSync create-update: do not delete
+  # the Application CR when it leaves the matrix (Argo CD 2.11.7 otherwise
+  # deletes the Application; the curriculum "Application stays alive" check
+  # needs this).
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+    applicationsSync: create-update
+
+  generators:
+    - matrix:
+        generators:
+          # Inner generator A: explicit env list.
+          - list:
+              elements:
+                - env: dev
+                  overlay: overlays/dev
+                  namespace: expense-dev
+                  wave: "0"
+                - env: staging
+                  overlay: overlays/staging
+                  namespace: expense-staging
+                  wave: "1"
+                - env: prod
+                  overlay: overlays/prod
+                  namespace: expense-prod
+                  wave: "2"
+          # Inner generator B: every cluster tagged tier=workload.
+          # For the local k3d cluster, label the registered cluster
+          # Secret: uptimecrew.example.internal/tier=workload
+          - clusters:
+              selector:
+                matchLabels:
+                  uptimecrew.example.internal/tier: workload
+
+  template:
+    metadata:
+      name: expense-api-{{env}}
+      namespace: argocd
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+      annotations:
+        argocd.argoproj.io/sync-wave: "{{wave}}"
+        notifications.argoproj.io/subscribe.on-sync-failed.slack: expense-deploys
+        notifications.argoproj.io/subscribe.on-health-degraded.slack: expense-deploys
+        # Webhook subscriptions key on the service NAME (expense-slack) with an
+        # empty value; there is no channel to name.
+        notifications.argoproj.io/subscribe.on-sync-failed.expense-slack: ""
+        notifications.argoproj.io/subscribe.on-health-degraded.expense-slack: ""
+      labels:
+        env:  "{{env}}"
+        team: expense
+    spec:
+      project: expense
+      source:
+        # This GitOps repo. uptimecrew/expense-config is also
+        # allow-listed on the AppProject for the curriculum URL.
+        repoURL:        https://github.com/AI-Native-2026-08-05-Intuit/heli-naik-expense-config.git
+        path:           "{{overlay}}"
+        targetRevision: main
+      destination:
+        server:    "{{server}}"
+        namespace: "{{namespace}}"
+      syncPolicy:
+        automated:
+          prune:    true
+          selfHeal: true
+          # PROD-ONLY EXCEPTION: if prod should require manual sync,
+          # drop the automated stanza for env: prod via templatePatch.
+          # See expense-api/GITOPS.md in the application repo.
+        syncOptions:
+          # CreateNamespace=false: AppProject clusterResourceWhitelist is empty,
+          # so Argo cannot apply the PreSync Namespace hook. Platform (or you)
+          # creates expense-{dev,staging,prod} once; manifests use namespace: only.
+          # ServerSideApply omitted: Argo CD v2.11.7 OpenAPI schema lacks
+          # Deployment.status.terminatingReplicas on this k3d kube.
+          - PrunePropagationPolicy=foreground
+          - PruneLast=true
+        retry:
+          limit: 5
+          backoff:
+            duration:    10s
+            factor:      2
+            maxDuration: 3m
