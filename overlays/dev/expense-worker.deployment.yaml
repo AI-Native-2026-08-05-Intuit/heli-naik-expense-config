@@ -1,0 +1,46 @@
+# TASK 1: KEDA scale target — same image as expense-api, worker profile, no HTTP.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: expense-api-worker
+  labels:
+    app: expense-api-worker
+    app.kubernetes.io/name: expense-api-worker
+    app.kubernetes.io/part-of: expense
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: expense-api-worker
+  template:
+    metadata:
+      labels:
+        app: expense-api-worker
+        app.kubernetes.io/name: expense-api-worker
+    spec:
+      containers:
+        - name: worker
+          image: uptimecrew/expense-api:task1-worker
+          imagePullPolicy: IfNotPresent
+          command:
+            - java
+            - -jar
+            - /app/application.jar
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: worker
+            - name: SPRING_MAIN_WEB_APPLICATION_TYPE
+              value: none
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              value: kafka.expense-dev.svc.cluster.local:9092
+            - name: SPRING_KAFKA_CONSUMER_GROUP_ID
+              value: expense-worker
+            - name: SPRING_DATA_MONGODB_URI
+              value: mongodb://mongo.expense-dev.svc.cluster.local:27017/expense
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi

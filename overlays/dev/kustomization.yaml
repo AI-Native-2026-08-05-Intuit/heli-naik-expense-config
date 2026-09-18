@@ -9,6 +9,9 @@ kind:       Kustomization
 # config repo at base/. Kept identical across envs.
 resources:
   - ../../base
+  - expense-worker.deployment.yaml
+  - expense-worker-scaledobject.yaml
+  - mongo.yaml
 
 # Per-env namespace -- Kustomize rewrites every resource's
 # metadata.namespace at build time.
@@ -28,11 +31,6 @@ images:
     newName: uptimecrew/expense-api
     newTag:  e87d308a6d587c3da973e61af85efd37d500c7b7
 
-# Per-env replica count -- dev runs hot at one replica.
-replicas:
-  - name:  expense-api
-    count: 1
-
 # Per-env config patch -- override the W5 D3 ConfigMap entries
 # that should differ between envs (Spring profile, log level,
 # feature flags).
@@ -48,10 +46,3 @@ patches:
       - op: replace
         path: /data/LOGGING_LEVEL_ROOT
         value: DEBUG
-  - target:
-      kind: HorizontalPodAutoscaler
-      name: expense-api
-    patch: |-
-      - op: replace
-        path: /spec/minReplicas
-        value: 1

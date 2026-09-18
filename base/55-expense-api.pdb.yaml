@@ -1,0 +1,13 @@
+# base/55-expense-api.pdb.yaml — floor protection (Task 2).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: expense-api-pdb
+  labels:
+    app.kubernetes.io/name: expense-api
+    app.kubernetes.io/part-of: expense
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: expense-api

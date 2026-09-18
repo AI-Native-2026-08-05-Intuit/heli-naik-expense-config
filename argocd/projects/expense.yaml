@@ -53,6 +53,7 @@ spec:
     - {group: "",                       kind: ServiceAccount}
     - {group: apps,                     kind: Deployment}
     - {group: autoscaling,              kind: HorizontalPodAutoscaler}
+    - {group: keda.sh,                  kind: ScaledObject}
     - {group: policy,                   kind: PodDisruptionBudget}
     - {group: networking.k8s.io,        kind: NetworkPolicy}
     - {group: networking.k8s.io,        kind: Ingress}
