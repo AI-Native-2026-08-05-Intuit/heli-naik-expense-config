@@ -1,0 +1,19 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: expense-worker-scaledobject
+spec:
+  scaleTargetRef:
+    name: expense-api-worker
+  minReplicaCount: 0
+  maxReplicaCount: 20
+  pollingInterval: 15
+  cooldownPeriod: 300
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: kafka.expense-dev.svc.cluster.local:9092
+        consumerGroup: expense-worker
+        topic: merchants.events
+        lagThreshold: "10"
+        offsetResetPolicy: latest
