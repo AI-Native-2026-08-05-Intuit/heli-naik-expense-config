@@ -29,7 +29,7 @@ commonAnnotations:
 images:
   - name:    uptimecrew/expense-api
     newName: uptimecrew/expense-api
-    newTag:  e87d308a6d587c3da973e61af85efd37d500c7b7
+    newTag:  w6d5-local
 
 # Per-env config patch -- override the W5 D3 ConfigMap entries
 # that should differ between envs (Spring profile, log level,
